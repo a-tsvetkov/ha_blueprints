@@ -77,7 +77,11 @@ blueprint:
           unit_of_measurement: 's'
           step: .05
           mode: slider
-
+    use_dim_hold_transition:
+      name: 'Use transition parameter on dim button hold'
+      default: true
+      selector:
+        boolean: {}
 triggers:
   - domain: mqtt
     device_id: !input device
@@ -125,6 +129,7 @@ variables:
   TARGET_AREA: !input target_area
   DEFAULT_SCENE: !input default_scene
   NIGHT_SCENE: !input night_scene
+  USE_DIM_HOLD_TRANSITION: !input use_dim_hold_transition
   all_lights: > 
     {{ 
       expand(area_entities(TARGET_AREA)) 
@@ -200,7 +205,7 @@ actions:
                 metadata: {}
                 data: 
                   brightness_step_pct: '{{ HOLD_STEP }}'
-                  transition: '{{ HOLD_DELAY / 1000 }}'
+                  transition: '{{ HOLD_DELAY / 1000 if USE_DIM_HOLD_TRANSITION else 0 }}'
                 target:
                   entity_id: '{{ turned_on_lights }}'
               - wait_for_trigger:
@@ -239,7 +244,7 @@ actions:
                       metadata: {}
                       data:
                         brightness_pct: '{{ max(1, state_attr(repeat.item, ''brightness'') / 2.55 - HOLD_STEP) }}'
-                        transition: '{{ HOLD_DELAY / 1000 }}'
+                        transition: '{{ HOLD_DELAY / 1000 if USE_DIM_HOLD_TRANSITION else 0 }}'
                       target:
                         entity_id: '{{ repeat.item }}'
               - wait_for_trigger:
