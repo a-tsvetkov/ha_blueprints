@@ -1,0 +1,219 @@
+blueprint:
+  domain: automation
+  name: 'Aqara H1 Smart Rotary Knob'
+  description: > 
+    Automation blueprint to control lights in area with Aqara H1 Smart
+    Rotary knob
+  input:
+    device:
+      name: 'Aqara H1 device'
+      selector:
+        device: 
+          filter:
+            integration: mqtt
+            manufacturer: 'Aqara'
+    rotation_angle_speed_entity_id:
+      name: Aqara H1 Smart Knob Action Rotation Angle Speed Entity
+      description: Select the Action Rotation Angle Speed entity of your Aqara H1
+        Smart Knob.
+      selector:
+        entity:
+          filter:
+          - domain:
+            - sensor
+          multiple: false
+    rotation_button_state_entity_id:
+      name: Aqara H1 Smart Knob Action Rotation Angle Speed Entity
+      description: Select the Action Rotation Button State entity of your Aqara H1
+        Smart Knob.
+      selector:
+        entity:
+          filter:
+          - domain:
+            - sensor
+          multiple: false
+    target_area:
+      name: 'Area to control'
+      selector:
+        area:
+          entity:
+            domain: light
+    default_scene:
+      name: 'Default scene'
+      description: 'Activated when no scene is saved or on button hold'
+      selector:
+        entity:
+          filter:
+            domain: scene
+    night_scene:
+      name: 'Night scene'
+      description: 'Activated on knob turn when light is turned off'
+      selector:
+        entity:
+          filter:
+            domain: scene
+    transition_time:
+      name: 'Transition time'
+      description: 'Transition applied for light turn on/off and scene change'
+      default: 0
+      selector:
+        number:
+          max: 5.0
+          min: 0.0
+          unit_of_measurement: 's'
+          step: .05
+          mode: slider
+triggers:
+- domain: mqtt
+  device_id: !input device
+  type: action
+  subtype: single
+  trigger: device
+  id: SINGLE
+- domain: mqtt
+  device_id: !input device
+  type: action
+  subtype: double
+  trigger: device
+  id: DOUBLE
+- domain: mqtt
+  device_id: !input device
+  type: action
+  subtype: hold
+  trigger: device
+  id: HOLD
+- trigger: state
+  entity_id: !input rotation_angle_speed_entity_id
+  not_to: unknown
+  id: ROTATION
+  enabled: true
+conditions: []
+variables:
+  BRIGHTNESS_STEP: 12
+  TRANSITION_TIME: !input transition_time
+  COLOR_TEMP_STEP: 100
+  MIN_BRIGHTNESS: 2  
+  TARGET_AREA: !input target_area
+  DEFAULT_SCENE: !input default_scene
+  NIGHT_SCENE: !input night_scene
+  all_lights: > 
+    {{ 
+      expand(area_entities(TARGET_AREA)) 
+        | selectattr('domain', 'eq', 'light') 
+        | map(attribute='entity_id') 
+        | list 
+    }}
+  turned_on_lights: >
+    {{ 
+      expand(area_entities(TARGET_AREA)) 
+        | selectattr('domain', 'eq', 'light') 
+        | selectattr('state', 'eq', 'on') 
+        | map(attribute='entity_id') 
+        | list 
+    }}  
+  next_scene: >
+    {{
+      expand(area_entities(TARGET_AREA))
+        | selectattr('domain', 'eq', 'scene') 
+        | sort(attribute='state')       
+        | map(attribute='entity_id')
+        | list
+        | first
+    }}
+actions: 
+- choose:
+  - conditions:
+    - condition: trigger
+      id: SINGLE
+    sequence:
+      - if:
+        - alias: "If no lights are turned on"
+          condition: template
+          value_template: "{{ turned_on_lights | count == 0}}"
+        then:
+          - action: scene.turn_on
+            data:
+              transition: '{{ TRANSITION_TIME }}'
+            target: 
+              entity_id: > 
+                {{ 
+                  'scene.' + TARGET_AREA + '_last_state' 
+                  if states.scene[TARGET_AREA + '_last_state'].state is defined
+                  else DEFAULT_SCENE
+                }}
+        else:
+          - action: scene.create
+            data:
+              scene_id: "{{ TARGET_AREA }}_last_state"
+              snapshot_entities: '{{ all_lights }}'              
+          - action: light.turn_off
+            metadata: {}
+            target:
+              area_id: '{{ TARGET_AREA }}'
+    alias: Toggle Light on "Single Click"
+  - conditions:
+    - condition: trigger
+      id: DOUBLE
+    sequence:
+      - action: scene.turn_on
+        data:
+          transition: '{{ TRANSITION_TIME }}'
+        target:
+          entity_id: '{{ next_scene }}'
+  - conditions:
+    - condition: trigger
+      id: HOLD
+    sequence:
+      - action: scene.turn_on
+        data:
+          transition: '{{ TRANSITION_TIME }}'      
+        target:
+          entity_id: '{{ DEFAULT_SCENE }}'
+  - conditions:
+    - condition: trigger
+      id: ROTATION
+    - condition: state
+      entity_id: sensor.vykliuchatel_v_kabinete_action_rotation_button_state
+      state: "released"
+    sequence: 
+      - if:
+        - alias: "If no lights are turned on"
+          condition: template
+          value_template: "{{ turned_on_lights | count == 0}}"
+        then:
+          - action: scene.turn_on
+            target:
+              entity_id: '{{ NIGHT_SCENE }}'
+        else:
+          repeat:
+            for_each: '{{ turned_on_lights }}'
+            sequence:            
+              - action: light.turn_on
+                metadata: {}
+                data:
+                  brightness: "{% set STEP_SIZE = trigger.to_state.state | int * BRIGHTNESS_STEP / 12 %}{% 
+                    set BRIGHTNESS = STEP_SIZE + state_attr(repeat.item, 'brightness')  %}{{ 
+                    min(255, max(MIN_BRIGHTNESS, BRIGHTNESS)) }}"
+                target:
+                  entity_id: '{{ repeat.item }}'
+  - conditions: 
+    - condition: trigger
+      id: ROTATION
+    - condition: state
+      entity_id: !input rotation_button_state_entity_id
+      state: "pressed"
+    sequence:
+      repeat:
+        for_each: '{{ turned_on_lights }}'
+        sequence:
+          - action: light.turn_on
+            metadata: {}
+            data: 
+              color_temp_kelvin: '{% set STEP_SIZE = trigger.to_state.state | int * COLOR_TEMP_STEP / 12 
+                %}{% set COLOR_TEMP_KELVIN = state_attr(repeat.item,''color_temp_kelvin'') 
+                %}{% set COLOR_TEMP_MIN = state_attr(repeat.item, ''min_color_temp_kelvin'')
+                %}{% set COLOR_TEMP_MAX = state_attr(repeat.item,''max_color_temp_kelvin'') 
+                %}{{ min(COLOR_TEMP_MAX, max(COLOR_TEMP_MIN, COLOR_TEMP_KELVIN - STEP_SIZE)) }}'
+            target: 
+              entity_id: '{{ repeat.item }}'
+mode: queued
