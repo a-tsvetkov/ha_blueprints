@@ -194,6 +194,7 @@ actions:
                   brightness: "{% set STEP_SIZE = trigger.to_state.state | int * BRIGHTNESS_STEP / 12 %}{% 
                     set BRIGHTNESS = STEP_SIZE + state_attr(repeat.item, 'brightness')  %}{{ 
                     min(255, max(MIN_BRIGHTNESS, BRIGHTNESS)) }}"
+                  transition: 0
                 target:
                   entity_id: '{{ repeat.item }}'
   - conditions: 
