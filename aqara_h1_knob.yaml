@@ -129,7 +129,7 @@ actions:
       - if:
         - alias: "If no lights are turned on"
           condition: template
-          value_template: "{{ turned_on_lights | count == 0}}"
+          value_template: "{{ turned_on_lights | count == 0 }}"
         then:
           - action: scene.turn_on
             data:
