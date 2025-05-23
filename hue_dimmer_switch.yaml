@@ -33,6 +33,15 @@ blueprint:
         entity:
           filter:
             domain: scene
+    exclude_scenes:
+      name: 'Exclude scenes'
+      description: 'Ignore provided scenes when cycling with on button'
+      default: []
+      selector:
+        entity:
+          filter:
+            domain: scene
+          multiple: true
     press_step:
       name: 'Press brightness step'
       description: 'Step size for dim button press in percent'
@@ -130,6 +139,7 @@ variables:
   DEFAULT_SCENE: !input default_scene
   NIGHT_SCENE: !input night_scene
   USE_DIM_HOLD_TRANSITION: !input use_dim_hold_transition
+  EXCLUDE_SCENES: !input exclude_scenes
   all_lights: > 
     {{ 
       expand(area_entities(TARGET_AREA)) 
@@ -149,6 +159,7 @@ variables:
     {{
       expand(area_entities(TARGET_AREA))
         | selectattr('domain', 'eq', 'scene') 
+        | rejectattr('entity_id', 'in', EXCLUDE_SCENES)
         | sort(attribute='state')       
         | map(attribute='entity_id')
         | list
