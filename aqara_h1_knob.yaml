@@ -52,6 +52,15 @@ blueprint:
         entity:
           filter:
             domain: scene
+    exclude_scenes:
+      name: 'Exclude scenes'
+      description: 'Ignore provided scenes when cycling with double click'
+      default: []
+      selector:
+        entity:
+          filter:
+            domain: scene
+          multiple: true
     transition_time:
       name: 'Transition time'
       description: 'Transition applied for light turn on/off and scene change'
@@ -96,6 +105,7 @@ variables:
   TARGET_AREA: !input target_area
   DEFAULT_SCENE: !input default_scene
   NIGHT_SCENE: !input night_scene
+  EXCLUDE_SCENES: !input exclude_scenes  
   all_lights: > 
     {{ 
       expand(area_entities(TARGET_AREA)) 
@@ -115,6 +125,7 @@ variables:
     {{
       expand(area_entities(TARGET_AREA))
         | selectattr('domain', 'eq', 'scene') 
+        | rejectattr('entity_id', 'in', EXCLUDE_SCENES)
         | sort(attribute='state')       
         | map(attribute='entity_id')
         | list
