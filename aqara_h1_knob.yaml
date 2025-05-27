@@ -23,7 +23,7 @@ blueprint:
             - sensor
           multiple: false
     rotation_button_state_entity_id:
-      name: Aqara H1 Smart Knob Action Rotation Angle Speed Entity
+      name: Aqara H1 Smart Knob Action Rotation Button State Entity
       description: Select the Action Rotation Button State entity of your Aqara H1
         Smart Knob.
       selector:
@@ -99,9 +99,9 @@ triggers:
 conditions: []
 variables:
   BRIGHTNESS_STEP: 12
-  TRANSITION_TIME: !input transition_time
   COLOR_TEMP_STEP: 100
   MIN_BRIGHTNESS: 2  
+  TRANSITION_TIME: !input transition_time
   TARGET_AREA: !input target_area
   DEFAULT_SCENE: !input default_scene
   NIGHT_SCENE: !input night_scene
@@ -184,7 +184,7 @@ actions:
     - condition: trigger
       id: ROTATION
     - condition: state
-      entity_id: sensor.vykliuchatel_v_kabinete_action_rotation_button_state
+      entity_id:  !input rotation_button_state_entity_id
       state: "released"
     sequence: 
       - if:
