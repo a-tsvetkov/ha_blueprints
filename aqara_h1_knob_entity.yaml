@@ -1,0 +1,267 @@
+blueprint:
+  domain: automation
+  name: 'Aqara H1 Smart Rotary Knob (Entity based)'
+  description: > 
+    Automation blueprint to control light entities with Aqara H1 Smart
+    Rotary knob
+  input:
+    device:
+      name: 'Aqara H1 device'
+      selector:
+        device: 
+          filter:
+            integration: mqtt
+            manufacturer: 'Aqara'
+    rotation_angle_speed_entity_id:
+      name: Aqara H1 Smart Knob Action Rotation Angle Speed Entity
+      description: Select the Action Rotation Angle Speed entity of your Aqara H1
+        Smart Knob.
+      selector:
+        entity:
+          filter:
+          - domain:
+            - sensor
+          multiple: false
+    rotation_button_state_entity_id:
+      name: Aqara H1 Smart Knob Action Rotation Button State Entity
+      description: Select the Action Rotation Button State entity of your Aqara H1
+        Smart Knob.
+      selector:
+        entity:
+          filter:
+          - domain:
+            - sensor
+          multiple: false
+    light_entities:
+      name: 'Light entities'
+      description: 'List of light entities to control'
+      selector:
+        entity:
+          filter:
+            domain: light
+          multiple: true
+    scenes:
+      name: 'Scenes to cycle though on double click'
+      description: ''
+      default: []
+      selector:
+        entity:
+          filter:
+            domain: scene
+          multiple: true
+    default_brightness:
+      name: "Default brightness"
+      description: "Brightness pct to set on hold"
+      default: 80
+      selector:
+        number:
+          max: 100
+          min: 1
+          unit_of_measurement: '%'
+          step: 1
+          mode: slider
+    default_color_temp:
+      name: "Default color temperature"
+      description: "Color temperatur to set on hold"
+      default: 2500
+      selector:
+        number:
+          max: 6500
+          min: 2000
+          unit_of_measurement: 'K'
+          step: 100
+          mode: slider
+    night_light_brightness:
+      name: "Night light brightness"
+      description: "Brightness pct to set on knob turn when off"
+      default: 5
+      selector:
+        number:
+          max: 100
+          min: 1
+          unit_of_measurement: '%'
+          step: 1
+          mode: slider
+    night_light_color_temp:
+      name: "Default color temperature"
+      description: "Color temperature to set on knob turn when off"
+      default: 2000
+      selector:
+        number:
+          max: 6500
+          min: 2000
+          unit_of_measurement: 'K'
+          step: 100
+          mode: slider
+    transition_time:
+      name: 'Transition time'
+      description: 'Transition applied for light turn on/off and scene change'
+      default: 0
+      selector:
+        number:
+          max: 5.0
+          min: 0.0
+          unit_of_measurement: 's'
+          step: .05
+          mode: slider
+    default_on_turn_on:
+      name: 'Set default color temp on light before turn on'
+      default: false
+      selector:
+        boolean: {}
+triggers:
+- domain: mqtt
+  device_id: !input device
+  type: action
+  subtype: single
+  trigger: device
+  id: SINGLE
+- domain: mqtt
+  device_id: !input device
+  type: action
+  subtype: double
+  trigger: device
+  id: DOUBLE
+- domain: mqtt
+  device_id: !input device
+  type: action
+  subtype: hold
+  trigger: device
+  id: HOLD
+- trigger: state
+  entity_id: !input rotation_angle_speed_entity_id
+  not_to: unknown
+  id: ROTATION
+  enabled: true
+conditions: []
+variables:
+  BRIGHTNESS_STEP: 4
+  COLOR_TEMP_STEP: 50
+  MIN_BRIGHTNESS: 1
+  LIGHT_ENTITIES: !input light_entities
+  TRANSITION_TIME: !input transition_time
+  SCENES: !input scenes
+  DEFAULT_ON_TURN_ON: !input default_on_turn_on
+  DEFAULT_BRIGHTNESS: !input default_brightness
+  DEFAULT_COLOR_TEMP: !input default_color_temp
+  NIGHT_LIGHT_BRIGHTNESS: !input night_light_brightness
+  NIGHT_LIGHT_COLOR_TEMP: !input night_light_color_temp
+  turned_on_lights: >
+    {{ 
+      expand(LIGHT_ENTITIES) 
+        | selectattr('state', 'eq', 'on') 
+        | map(attribute='entity_id') 
+        | list 
+    }}  
+  next_scene: >
+    {{
+      expand(SCENES)
+        | sort(attribute='state')       
+        | map(attribute='entity_id')
+        | list
+        | first
+    }}
+actions:
+- choose:
+  - conditions:
+    - condition: trigger
+      id: SINGLE
+    sequence:
+      - if:
+        - condition: template
+          value_template: "{{ DEFAULT_ON_TURN_ON }}"
+        then:
+        - if:
+          - alias: "If no lights are turned on"
+            condition: template
+            value_template: "{{ turned_on_lights | count == 0 }}"
+          then:
+            - action: light.turn_on
+              data:
+                brightness_pct: '{{ DEFAULT_BRIGHTNESS }}'
+                color_temp_kelvin: '{{ DEFAULT_COLOR_TEMP }}'
+              target: 
+                entity_id: '{{ LIGHT_ENTITIES }}'
+          else:
+            - action: light.turn_off
+              target:
+                entity_id: '{{ LIGHT_ENTITIES }}'
+        else:
+          - action: light.toggle
+            target:
+              entity_id: '{{ LIGHT_ENTITIES }}'
+    alias: Toggle Light on "Single Click"
+  - conditions:
+    - condition: trigger
+      id: DOUBLE
+    sequence:
+      - action: scene.turn_on
+        data:
+          transition: '{{ TRANSITION_TIME }}'
+        target:
+          entity_id: '{{ next_scene }}'
+  - conditions:
+    - condition: trigger
+      id: HOLD
+    sequence:
+      - action: light.turn_on
+        data:
+          brightness_pct: '{{ DEFAULT_BRIGHTNESS }}'
+          color_temp_kelvin: '{{ DEFAULT_COLOR_TEMP }}'
+          transition: '{{ TRANSITION_TIME }}'
+        target:
+          entity_id: '{{ LIGHT_ENTITIES }}'
+  - conditions:
+    - condition: trigger
+      id: ROTATION
+    - condition: state
+      entity_id:  !input rotation_button_state_entity_id
+      state: "released"
+    sequence: 
+      - if:
+        - alias: "If no lights are turned on"
+          condition: template
+          value_template: "{{ turned_on_lights | count == 0}}"
+        then:
+          - action: light.turn_on
+            data:
+              brightness_pct: '{{ NIGHT_LIGHT_BRIGHTNESS }}'
+              color_temp_kelvin: '{{ NIGHT_LIGHT_COLOR_TEMP }}'
+              transition: '{{ TRANSITION_TIME }}'
+            target:
+              entity_id: '{{ LIGHT_ENTITIES }}'
+        else:
+          repeat:
+            for_each: '{{ turned_on_lights }}'
+            sequence:            
+              - action: light.turn_on
+                metadata: {}
+                data:
+                  brightness_pct: "{% set STEP_SIZE = trigger.to_state.state | int * BRIGHTNESS_STEP / 12 %}{% 
+                    set BRIGHTNESS = STEP_SIZE + state_attr(repeat.item, 'brightness') / 2.55 %}{{ 
+                    min(100, max(1, BRIGHTNESS)) }}"
+                  transition: 0
+                target:
+                  entity_id: '{{ repeat.item }}'
+  - conditions: 
+    - condition: trigger
+      id: ROTATION
+    - condition: state
+      entity_id: !input rotation_button_state_entity_id
+      state: "pressed"
+    sequence:
+      repeat:
+        for_each: '{{ turned_on_lights }}'
+        sequence:
+          - action: light.turn_on
+            metadata: {}
+            data: 
+              color_temp_kelvin: '{% set STEP_SIZE = trigger.to_state.state | int * COLOR_TEMP_STEP / 12 
+                %}{% set COLOR_TEMP_KELVIN = state_attr(repeat.item,''color_temp_kelvin'') 
+                %}{% set COLOR_TEMP_MIN = state_attr(repeat.item, ''min_color_temp_kelvin'')
+                %}{% set COLOR_TEMP_MAX = state_attr(repeat.item,''max_color_temp_kelvin'') 
+                %}{{ min(COLOR_TEMP_MAX, max(COLOR_TEMP_MIN, COLOR_TEMP_KELVIN - STEP_SIZE)) }}'
+              transition: 0
+            target: 
+              entity_id: '{{ repeat.item }}'
+mode: queued
