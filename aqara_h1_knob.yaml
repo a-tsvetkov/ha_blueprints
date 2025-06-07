@@ -131,7 +131,7 @@ variables:
         | list
         | first
     }}
-actions: 
+actions:
 - choose:
   - conditions:
     - condition: trigger
