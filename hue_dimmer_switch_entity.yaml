@@ -1,0 +1,325 @@
+blueprint:
+  domain: automation
+  name: "Hue Dimmer Switch (Entity Based)"
+  description: >
+    Blueprint to control area lighting with Philips Hue dimmer switch.
+    Supports scene switching.
+  input:
+    device:
+      name: 'Hue Dimmer Switch device'
+      selector:
+        device: 
+          filter:
+            integration: mqtt
+            manufacturer: 'Philips'
+            model: 'Hue dimmer switch'
+    light_entities:
+      name: 'Light entities'
+      description: 'List of light entities to control'
+      selector:
+        entity:
+          filter:
+            domain: light
+          multiple: true
+    scenes:
+      name: 'Scenes to cycle though on double click'
+      description: ''
+      default: []
+      selector:
+        entity:
+          filter:
+            domain: scene
+          multiple: true
+    default_brightness:
+      name: "Default brightness"
+      description: "Brightness pct to set on hold"
+      default: 80
+      selector:
+        number:
+          max: 100
+          min: 1
+          unit_of_measurement: '%'
+          step: 1
+          mode: slider
+    default_color_temp:
+      name: "Default color temperature"
+      description: "Color temperatur to set on hold"
+      default: 2500
+      selector:
+        number:
+          max: 6500
+          min: 2000
+          unit_of_measurement: 'K'
+          step: 100
+          mode: slider
+    night_light_brightness:
+      name: "Night light brightness"
+      description: "Brightness pct to set on knob turn when off"
+      default: 5
+      selector:
+        number:
+          max: 100
+          min: 1
+          unit_of_measurement: '%'
+          step: 1
+          mode: slider
+    transition_time:
+      name: 'Transition time'
+      description: 'Transition applied for light turn on/off and scene change'
+      default: 0
+      selector:
+        number:
+          max: 5.0
+          min: 0.0
+          unit_of_measurement: 's'
+          step: .05
+          mode: slider
+    default_on_turn_on:
+      name: 'Set default color temp on light before turn on'
+      default: false
+      selector:
+        boolean: {}
+    press_step:
+      name: 'Press brightness step'
+      description: 'Step size for dim button press in percent'
+      default: 20.0
+      selector:
+        number:
+          max: 50.0
+          min: 0.0
+          unit_of_measurement: '%'
+          step: 1.0
+          mode: slider
+    hold_step:
+      name: 'Hold brightness step'
+      description: 'Step size for dim button hold per second'
+      default: 40.0
+      selector:
+        number:
+          max: 100.0
+          min: 0.0
+          unit_of_measurement: '%'
+          step: 1.0
+          mode: slider
+    dim_transition:
+      name: 'Transition for when dim button is pressed'
+      description: 'Transition applied for dim buttons press'
+      default: 0.25
+      selector:
+        number:
+          max: 5.0
+          min: 0.0
+          unit_of_measurement: 's'
+          step: .05
+          mode: slider
+    use_dim_hold_transition:
+      name: 'Use transition parameter on dim button hold'
+      default: true
+      selector:
+        boolean: {}
+triggers:
+  - domain: mqtt
+    device_id: !input device
+    type: action
+    subtype: on_press_release
+    trigger: device
+    id: ON_PRESSED
+  - domain: mqtt
+    device_id: !input device
+    type: action
+    subtype: on_hold
+    trigger: device
+    id: ON_HELD
+  - domain: mqtt
+    device_id: !input device
+    type: action
+    subtype: off_press_release
+    trigger: device
+    id: OFF_PRESSED
+  - domain: mqtt
+    device_id: !input device
+    type: action
+    subtype: up_press_release
+    trigger: device
+    id: UP_PRESSED
+  - domain: mqtt
+    device_id: !input device
+    type: action
+    subtype: up_hold
+    trigger: device
+    id: UP_HELD
+  - domain: mqtt
+    device_id: !input device
+    type: action
+    subtype: down_hold
+    trigger: device
+    id: DOWN_HELD      
+  - domain: mqtt
+    device_id: !input device
+    type: action
+    subtype: down_press_release
+    trigger: device
+    id: DOWN_PRESSED
+variables:
+  LIGHT_ENTITIES: !input light_entities
+  TRANSITION_TIME: !input transition_time
+  SCENES: !input scenes
+  DEFAULT_ON_TURN_ON: !input default_on_turn_on
+  DEFAULT_BRIGHTNESS: !input default_brightness
+  DEFAULT_COLOR_TEMP: !input default_color_temp
+  NIGHT_LIGHT_BRIGHTNESS: !input night_light_brightness
+  PRESS_STEP: !input press_step
+  HOLD_STEP_PER_SECOND: !input hold_step
+  HOLD_STEP: '{{ HOLD_STEP_PER_SECOND / 4 }}'
+  HOLD_DELAY: 250
+  DIM_PRESS_TRANSITION: !input dim_transition
+  USE_DIM_HOLD_TRANSITION: !input use_dim_hold_transition
+  turned_on_lights: >
+    {{ 
+      expand(LIGHT_ENTITIES) 
+        | selectattr('domain', 'eq', 'light') 
+        | selectattr('state', 'eq', 'on') 
+        | map(attribute='entity_id') 
+        | list 
+    }}  
+  next_scene: >
+    {{
+      expand(SCENES)
+        | sort(attribute='state')       
+        | map(attribute='entity_id')
+        | list
+        | first
+    }}
+actions: 
+  - choose: 
+    - conditions:
+      - condition: trigger
+        id: ON_PRESSED
+      sequence:
+      - if:
+        - alias: "If no lights are turned on"
+          condition: template
+          value_template: "{{ turned_on_lights | count == 0 }}"
+        then:
+          - if:
+            - condition: template
+              value_template: "{{ DEFAULT_ON_TURN_ON }}"
+            then:
+              - action: light.turn_on
+                data:
+                  brightness_pct: '{{ DEFAULT_BRIGHTNESS }}'
+                  color_temp_kelvin: '{{ DEFAULT_COLOR_TEMP }}'
+                target: 
+                  entity_id: '{{ LIGHT_ENTITIES }}'
+            else: 
+              - action: light.turn_on
+                target: 
+                  entity_id: '{{ LIGHT_ENTITIES }}'
+        else:
+          - action: scene.turn_on
+            target:
+              entity_id: '{{ next_scene }}'
+    - conditions:
+      - condition: trigger
+        id: ON_HELD
+      sequence:
+        - action: light.turn_on
+          data:
+            brightness_pct: '{{ DEFAULT_BRIGHTNESS }}'
+            color_temp_kelvin: '{{ DEFAULT_COLOR_TEMP }}'
+          target: 
+            entity_id: '{{ LIGHT_ENTITIES }}'
+    - conditions:
+      - condition: trigger
+        id: UP_PRESSED
+      sequence:
+      - if:
+        - alias: "If no lights are turned on"
+          condition: template
+          value_template: "{{ turned_on_lights | count == 0 }}"
+        then:
+          - action: light.turn_on
+            data:
+              brightness_pct: '{{ NIGHT_LIGHT_BRIGHTNESS }}'
+            target: 
+              entity_id: '{{ LIGHT_ENTITIES }}'
+        else:
+          - action: light.turn_on
+            metadata: {}
+            data: 
+              brightness_step_pct: '{{ PRESS_STEP }}'
+              transition: '{{ DIM_PRESS_TRANSITION }}'
+            target:
+              entity_id: '{{ turned_on_lights }}'
+    - conditions:
+      - condition: trigger
+        id: UP_HELD
+      sequence:
+        - repeat:
+            until: "{{ wait.trigger is not none or repeat.index >= (1000 / HOLD_DELAY) }}"
+            sequence:
+              - action: light.turn_on
+                metadata: {}
+                data: 
+                  brightness_step_pct: '{{ HOLD_STEP }}'
+                  transition: '{{ HOLD_DELAY / 1000 if USE_DIM_HOLD_TRANSITION else 0 }}'
+                target:
+                  entity_id: '{{ turned_on_lights }}'
+              - wait_for_trigger:
+                  - domain: mqtt
+                    device_id: !input device
+                    type: action
+                    subtype: up_hold_release
+                    trigger: device
+                timeout:
+                  milliseconds: '{{ HOLD_DELAY }}'
+    - conditions:
+      - condition: trigger
+        id: DOWN_PRESSED
+      sequence:
+        - repeat:
+            for_each: '{{ turned_on_lights }}'
+            sequence:
+              - action: light.turn_on
+                metadata: {}
+                data: 
+                  brightness_pct: '{{ max(1, state_attr(repeat.item, ''brightness'') / 2.55 - PRESS_STEP) }}'
+                  transition: '{{ DIM_PRESS_TRANSITION }}'
+                target:
+                  entity_id: '{{ repeat.item }}'
+    - conditions:
+      - condition: trigger
+        id: DOWN_HELD
+      sequence:
+        - repeat:
+            until: "{{ wait.trigger is not none or repeat.index >= (1000 / HOLD_DELAY) }}"
+            sequence:
+              - repeat:
+                  for_each: '{{ turned_on_lights }}'
+                  sequence:
+                    - action: light.turn_on
+                      metadata: {}
+                      data:
+                        brightness_pct: '{{ max(1, state_attr(repeat.item, ''brightness'') / 2.55 - HOLD_STEP) }}'
+                        transition: '{{ HOLD_DELAY / 1000 if USE_DIM_HOLD_TRANSITION else 0 }}'
+                      target:
+                        entity_id: '{{ repeat.item }}'
+              - wait_for_trigger:
+                  - domain: mqtt
+                    device_id: !input device
+                    type: action
+                    subtype: down_hold_release
+                    trigger: device
+                timeout:
+                  milliseconds: '{{ HOLD_DELAY }}'
+    - conditions:
+      - condition: trigger
+        id: OFF_PRESSED
+      sequence:
+        - action: light.turn_off
+          metadata: {}
+          data:
+            transition: '{{ TRANSITION_TIME }}'
+          target:
+            entity_id: '{{ LIGHT_ENTITIES }}'
+mode: parallel
