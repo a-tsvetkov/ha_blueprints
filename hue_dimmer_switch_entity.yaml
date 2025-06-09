@@ -217,6 +217,8 @@ actions:
                   entity_id: '{{ LIGHT_ENTITIES }}'
         else:
           - action: scene.turn_on
+            data:
+              transition: '{{ TRANSITION_TIME }}'          
             target:
               entity_id: '{{ next_scene }}'
     - conditions:
